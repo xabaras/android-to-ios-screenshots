@@ -1,8 +1,23 @@
 # android-to-ios-screenshots
 
+**Version:** 1.1.0
+
 Converts Android app screenshots into PNGs ready for **App Store Connect** (iPhone 6.5" format, 1242×2688), with an iOS status bar and home indicator, and no visible Android system chrome.
 
 Built for **KMP/Compose** apps (same UI on Android and iOS): capture screenshots on an Android device or emulator and reuse them for the iOS App Store listing.
+
+## Changelog
+
+### 1.1.0
+
+- Dark-friendly status bar overlay (white glyphs + Dynamic Island) with light/dark auto-detect on refresh
+- Status inpainting relative to the app header background (works on dark UIs and colored headers such as orange)
+- Scrub residual Android ghosts in chrome zones before pasting the iOS overlay
+- Home indicator polarity adapts at runtime: light on dark bottoms, dark on light bottoms
+
+### 1.0.0
+
+- Initial skill: cover resize to 1242×2688, targeted status inpainting, iOS overlays
 
 ## Requirements
 
@@ -104,7 +119,7 @@ android-to-ios-screenshots --input "..." --output "..." --width 1284 --height 27
 
 ### Regenerating iOS overlays
 
-Requires a native iOS Simulator screenshot (e.g. iPhone 16, portrait):
+Requires a native iOS Simulator screenshot (e.g. iPhone 16, portrait). Prefer a **dark** status bar reference when regenerating the status overlay for dark apps:
 
 ```bash
 android-to-ios-screenshots \
@@ -123,7 +138,8 @@ For each output PNG:
 - [ ] Exact dimensions (1242×2688 or requested size)
 - [ ] No Android icons under transparent status bar areas (left, right, beside Dynamic Island)
 - [ ] No flat sage rectangles at top or bottom
-- [ ] iOS home indicator visible at the bottom
+- [ ] Status chrome is white on dark or colored headers (not dark glyphs / color bands)
+- [ ] iOS home indicator visible at the bottom — light on dark UIs, dark on light UIs
 - [ ] App UI content not cropped at the sides
 
 ## How the script works
@@ -136,12 +152,13 @@ Source Android PNG
   → remove gesture bar line (source, bottom)
   → crop nav bar (--nav-bar-crop, default 48 px)
   → “cover” resize to 1242×2688 (top-aligned, horizontal crop if needed)
-  → remove status bar icons (scaled image, top ~155 px)
-  → ghost scrub (grey/colored residue under transparent overlay)
-  → polish chrome zones (left, right, Dynamic Island flanks)
-  → extra Dynamic Island flank polish pass
+  → remove status bar icons (scaled image, top ~155 px; relative to app header bg)
+  → ghost scrub under transparent overlay
+  → polish chrome zones (light decor only; skipped on dark/saturated headers)
+  → Dynamic Island flank cleanup
+  → hard scrub chrome zones to solid app status bg
   → paste iOS status bar overlay
-  → paste iOS home indicator overlay
+  → paste iOS home indicator (light on dark bottoms, dark on light)
   → automatic verification + save PNG
 ```
 
@@ -153,8 +170,9 @@ The script uses **cover + crop** (not letterbox): scales to fill 1242×2688, kee
 
 It does **not** replace entire bands with a flat median color (that produced visible sage rectangles). Instead:
 
-1. **Detects** Android icon pixels only: dark greys, saturated green battery, etc.
-2. **Replaces** each icon pixel with the average of **same-row** neighbors that look like decor/background (preserves gradients and decorative circles).
+1. **Samples** the solid app status/header background from the top corners.
+2. **Detects** Android icon pixels as deviations from that background (works for dark UIs and colored headers, not only light decor).
+3. **Replaces** each icon pixel with same-row neighbors matching the app background (or the background color itself).
 
 Zones cleaned more aggressively (“chrome zones”):
 
@@ -168,10 +186,10 @@ Zones cleaned more aggressively (“chrome zones”):
 
 Two transparent PNGs in `assets/`:
 
-- **Status bar** (155 px): Dynamic Island, time, Wi‑Fi, battery — transparent background so app content shows through
-- **Home indicator** (42 px): centered black line at the bottom
+- **Status bar** (155 px): Dynamic Island, time, Wi‑Fi, battery — transparent background so app content shows through (white chrome for dark apps)
+- **Home indicator** (42 px): centered line at the bottom; polarity is adapted at runtime for dark vs light bottoms
 
-Generated once from an iOS Simulator screenshot; normal runs reuse them as-is.
+Generated from an iOS Simulator screenshot; normal runs reuse them (home indicator may be recolored per frame).
 
 ### What to avoid
 

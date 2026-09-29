@@ -1,5 +1,6 @@
 ---
 name: android-to-ios-screenshots
+version: 1.1.0
 description: Converts Android app screenshots to iPhone App Store dimensions (1242x2688) with iOS status bar and home indicator overlays. Removes Android status/nav chrome via targeted inpainting, not band flattening. Use when preparing App Store screenshots from Android captures, converting screenshot dimensions for iOS, or when the user mentions android-to-ios-screenshots.
 ---
 
@@ -47,8 +48,8 @@ For 6.7" display: `--width 1284 --height 2778`.
 
 Pre-built iOS chrome lives in `assets/` next to this skill:
 
-- `ios-status-bar-overlay.png` — Dynamic Island, time, Wi‑Fi, battery
-- `ios-home-indicator-overlay.png` — home indicator line
+- `ios-status-bar-overlay.png` — Dynamic Island, time, Wi‑Fi, battery (white chrome for dark/colored app headers)
+- `ios-home-indicator-overlay.png` — home indicator line (inverted to light on dark bottoms at runtime)
 
 Normal runs use these assets. To regenerate from a native iOS simulator screenshot:
 
@@ -69,7 +70,8 @@ For each output PNG:
 - [ ] Exact dimensions (1242×2688 or requested size)
 - [ ] No Android icons visible under transparent status bar areas (left, right, beside Dynamic Island)
 - [ ] No flat sage rectangles in status/nav bands (never use full-band flatten)
-- [ ] iOS home indicator visible at bottom
+- [ ] Status chrome is white on dark or colored headers (not dark glyphs / peach bands)
+- [ ] iOS home indicator visible at bottom — **light** on dark UIs, dark on light UIs
 - [ ] App UI content not cropped at sides
 
 ## Anti-patterns
