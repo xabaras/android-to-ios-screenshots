@@ -2,9 +2,9 @@
 
 **Version:** 1.1.0
 
-Converts Android app screenshots into PNGs ready for **App Store Connect** (iPhone 6.5" format, 1242×2688), with an iOS status bar and home indicator, and no visible Android system chrome.
+Convert Android app screenshots into PNGs ready for **App Store Connect** (iPhone 6.5" format, 1242×2688) directly into your AI agents of choice.
 
-Built for **KMP/Compose** apps (same UI on Android and iOS): capture screenshots on an Android device or emulator and reuse them for the iOS App Store listing.
+Built for **KMP/Compose** apps (same UI on Android and iOS): capture screenshots on an Android device or emulator and reuse them for the iOS App Store listing, with an iOS status bar and home indicator, and no visible Android system visuals.
 
 ## Changelog
 
@@ -15,28 +15,39 @@ Built for **KMP/Compose** apps (same UI on Android and iOS): capture screenshots
 - Scrub residual Android ghosts in chrome zones before pasting the iOS overlay
 - Home indicator polarity adapts at runtime: light on dark bottoms, dark on light bottoms
 
+
+
 ### 1.0.0
 
 - Initial skill: cover resize to 1242×2688, targeted status inpainting, iOS overlays
+
+
 
 ## Requirements
 
 - Python 3
 - [Pillow](https://pypi.org/project/Pillow/): `pip3 install Pillow`
 
+
+
 ## Installation
 
-### From Gitea
+
+
+### From Git
+
+Clone this repository into your AI agent’s skills directory (for example Cursor, Claude, or another agent that loads skills from disk), then create the CLI wrapper (see below). The examples below use Cursor paths; for other agents, substitute the correct skills directory for your setup.
+
+Example:
 
 ```bash
-git clone https://montypablo.ddns.net/git/xabaras/android-to-ios-screenshots.git \
+git clone https://github.com/xabaras/android-to-ios-screenshots.git \
   ~/.cursor/skills/android-to-ios-screenshots
-pip3 install Pillow
 ```
 
-Then create the CLI wrapper (see below). To update later: `git -C ~/.cursor/skills/android-to-ios-screenshots pull`.
 
-### Layout
+
+### CLI Wrapper
 
 The package lives at:
 
@@ -51,13 +62,7 @@ The package lives at:
     └── ios-home-indicator-overlay.png
 ```
 
-Shell command (if installed in `~/.local/bin`):
-
-```bash
-which android-to-ios-screenshots
-```
-
-If missing, create the wrapper:
+Create the CLI wrapper:
 
 ```bash
 cat > ~/.local/bin/android-to-ios-screenshots << 'EOF'
@@ -67,7 +72,16 @@ EOF
 chmod +x ~/.local/bin/android-to-ios-screenshots
 ```
 
-## Quick start
+
+
+## Usage
+
+This skill is meant to be used mainly through your AI agent: ask it to convert Android screenshots for the App Store (provide the input and output folders) and it will do the job using the bundled converter.
+Your AI agent will load [SKILL.md](SKILL.md) when asked to working on App Store screenshots, the skill will tell the agent to run the command line tool, w/o reimplementing the pipeline.
+
+### Command-line tool
+
+You can also call the converter yourself from the terminal:
 
 ```bash
 android-to-ios-screenshots \
@@ -85,37 +99,45 @@ python3 ~/.cursor/skills/android-to-ios-screenshots/scripts/convert_android_to_i
 
 Converts every `.png` in `--input` and writes prefixed files to `--output` (default prefix: `iphone_`).
 
-### Example (Just Five)
+#### Example
 
 ```bash
 android-to-ios-screenshots \
-  --input "$HOME/Library/CloudStorage/Dropbox/Progetti/App/JustFive/screenshot/per iOS" \
-  --output "$HOME/Library/CloudStorage/Dropbox/Progetti/App/JustFive/screenshot/iOS" \
+  --input "./android-screenshots" \
+  --output "./ios-screenshots" \
   --prefix iphone_
 ```
 
+
+
 ## Main options
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--input` | *(required)* | Folder with source Android PNGs |
-| `--output` | *(required)* | Output folder |
-| `--prefix` | `iphone_` | Output filename prefix |
-| `--width` | `1242` | Target width |
-| `--height` | `2688` | Target height (6.5" display) |
-| `--status-bar-crop` | `0` | Pixels to crop from top (**keep 0** to preserve header decor) |
-| `--nav-bar-crop` | `48` | Pixels to crop from bottom (Android gesture bar) |
-| `--no-ios-status-bar` | off | Resize only, no status bar overlay |
-| `--no-ios-home-indicator` | off | Skip iOS home indicator overlay |
-| `--status-bar-ref` | — | iOS simulator screenshot used to regenerate overlays |
-| `--refresh-status-bar-overlay` | off | Regenerate `assets/ios-status-bar-overlay.png` |
-| `--refresh-home-indicator-overlay` | off | Regenerate `assets/ios-home-indicator-overlay.png` |
+
+| Flag                               | Default      | Description                                                   |
+| ---------------------------------- | ------------ | ------------------------------------------------------------- |
+| `--input`                          | *(required)* | Folder with source Android PNGs                               |
+| `--output`                         | *(required)* | Output folder                                                 |
+| `--prefix`                         | `iphone_`    | Output filename prefix                                        |
+| `--width`                          | `1242`       | Target width                                                  |
+| `--height`                         | `2688`       | Target height (6.5" display)                                  |
+| `--status-bar-crop`                | `0`          | Pixels to crop from top (**keep 0** to preserve header decor) |
+| `--nav-bar-crop`                   | `48`         | Pixels to crop from bottom (Android gesture bar)              |
+| `--no-ios-status-bar`              | off          | Resize only, no status bar overlay                            |
+| `--no-ios-home-indicator`          | off          | Skip iOS home indicator overlay                               |
+| `--status-bar-ref`                 | —            | iOS simulator screenshot used to regenerate overlays          |
+| `--refresh-status-bar-overlay`     | off          | Regenerate `assets/ios-status-bar-overlay.png`                |
+| `--refresh-home-indicator-overlay` | off          | Regenerate `assets/ios-home-indicator-overlay.png`            |
+
+
+
 
 ### 6.7" format (optional)
 
 ```bash
 android-to-ios-screenshots --input "..." --output "..." --width 1284 --height 2778
 ```
+
+
 
 ### Regenerating iOS overlays
 
@@ -142,7 +164,11 @@ For each output PNG:
 - [ ] iOS home indicator visible at the bottom — light on dark UIs, dark on light UIs
 - [ ] App UI content not cropped at the sides
 
+
+
 ## How the script works
+
+
 
 ### Pipeline
 
@@ -162,6 +188,8 @@ Source Android PNG
   → automatic verification + save PNG
 ```
 
+
+
 ### Resize
 
 The script uses **cover + crop** (not letterbox): scales to fill 1242×2688, keeps the top edge aligned, and center-crops horizontally. Avoids side bars and keeps the status bar area consistent.
@@ -176,11 +204,15 @@ It does **not** replace entire bands with a flat median color (that produced vis
 
 Zones cleaned more aggressively (“chrome zones”):
 
-| Zone | Position (1242 px) | Typical content |
-|------|--------------------|-----------------|
-| Left | x < 300 | Time, Android notifications |
-| Right | x ≥ 902 | Battery, signal icons |
-| Dynamic Island flanks | x ≈ 306–426 and 816–936 | Residue beside the pill |
+
+| Zone                  | Position (1242 px)      | Typical content             |
+| --------------------- | ----------------------- | --------------------------- |
+| Left                  | x < 300                 | Time, Android notifications |
+| Right                 | x ≥ 902                 | Battery, signal icons       |
+| Dynamic Island flanks | x ≈ 306–426 and 816–936 | Residue beside the pill     |
+
+
+
 
 ### iOS overlays
 
@@ -193,14 +225,10 @@ Generated from an iOS Simulator screenshot; normal runs reuse them (home indicat
 
 ### What to avoid
 
-- **`--status-bar-crop` > 0** — crops decorative circles under the status bar
+- `--status-bar-crop` **> 0** — crops decorative circles under the status bar
 - **Full-band flatten** — produces rectangular sage patches (replaced by targeted inpainting)
 - **Copying the script into app repos** — keep it in this skill; use the CLI from app projects
 
-## Cursor skill
-
-Cursor agents can load [`SKILL.md`](SKILL.md) when working on App Store screenshots. The skill tells the agent to **run** this tool, not reimplement the pipeline.
-
 ## License / notes
 
-Personal tool; iOS overlays derived from simulator screenshots. Always visually review every PNG before uploading to App Store Connect.
+MIT License; iOS overlays are derived from simulator screenshots. Always visually review every PNG before uploading to App Store Connect.
