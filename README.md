@@ -1,12 +1,18 @@
 # android-to-ios-screenshots
 
-**Version:** 1.1.0
+**Version:** 1.2.0
 
-Convert Android app screenshots into PNGs ready for **App Store Connect** (iPhone 6.5" format, 1242×2688) directly into your AI agents of choice.
+Convert Android app screenshots into PNGs ready for **App Store Connect** (iPhone with Dynamic Island medium display, **1206×2622**) directly into your AI agents of choice.
 
 Built for **KMP/Compose** apps (same UI on Android and iOS): capture screenshots on an Android device or emulator and reuse them for the iOS App Store listing, with an iOS status bar and home indicator, and no visible Android system visuals.
 
 ## Changelog
+
+### 1.2.0
+
+- Default output size **1206×2622** (App Store Connect: iPhone with Dynamic Island, medium display)
+- Also accepted for that slot: 1179×2556; optional large: 1320×2868
+- Status chrome zone margins scale with target width
 
 ### 1.1.0
 
@@ -14,8 +20,6 @@ Built for **KMP/Compose** apps (same UI on Android and iOS): capture screenshots
 - Status inpainting relative to the app header background (works on dark UIs and colored headers such as orange)
 - Scrub residual Android ghosts in chrome zones before pasting the iOS overlay
 - Home indicator polarity adapts at runtime: light on dark bottoms, dark on light bottoms
-
-
 
 ### 1.0.0
 
@@ -118,8 +122,8 @@ android-to-ios-screenshots \
 | `--input`                          | *(required)* | Folder with source Android PNGs                               |
 | `--output`                         | *(required)* | Output folder                                                 |
 | `--prefix`                         | `iphone_`    | Output filename prefix                                        |
-| `--width`                          | `1242`       | Target width                                                  |
-| `--height`                         | `2688`       | Target height (6.5" display)                                  |
+| `--width`                          | `1206`       | Target width                                                  |
+| `--height`                         | `2622`       | Target height (Dynamic Island medium display)                                  |
 | `--status-bar-crop`                | `0`          | Pixels to crop from top (**keep 0** to preserve header decor) |
 | `--nav-bar-crop`                   | `48`         | Pixels to crop from bottom (Android gesture bar)              |
 | `--no-ios-status-bar`              | off          | Resize only, no status bar overlay                            |
@@ -131,10 +135,10 @@ android-to-ios-screenshots \
 
 
 
-### 6.7" format (optional)
+### Alternate medium Dynamic Island size (optional)
 
 ```bash
-android-to-ios-screenshots --input "..." --output "..." --width 1284 --height 2778
+android-to-ios-screenshots --input "..." --output "..." --width 1179 --height 2556
 ```
 
 
@@ -157,7 +161,7 @@ android-to-ios-screenshots \
 
 For each output PNG:
 
-- [ ] Exact dimensions (1242×2688 or requested size)
+- [ ] Exact dimensions (1206×2622 or requested size)
 - [ ] No Android icons under transparent status bar areas (left, right, beside Dynamic Island)
 - [ ] No flat sage rectangles at top or bottom
 - [ ] Status chrome is white on dark or colored headers (not dark glyphs / color bands)
@@ -177,7 +181,7 @@ Source Android PNG
   → remove status bar icons (source, top ~96 px)
   → remove gesture bar line (source, bottom)
   → crop nav bar (--nav-bar-crop, default 48 px)
-  → “cover” resize to 1242×2688 (top-aligned, horizontal crop if needed)
+  → “cover” resize to 1206×2622 (top-aligned, horizontal crop if needed)
   → remove status bar icons (scaled image, top ~155 px; relative to app header bg)
   → ghost scrub under transparent overlay
   → polish chrome zones (light decor only; skipped on dark/saturated headers)
@@ -192,7 +196,7 @@ Source Android PNG
 
 ### Resize
 
-The script uses **cover + crop** (not letterbox): scales to fill 1242×2688, keeps the top edge aligned, and center-crops horizontally. Avoids side bars and keeps the status bar area consistent.
+The script uses **cover + crop** (not letterbox): scales to fill 1206×2622, keeps the top edge aligned, and center-crops horizontally. Avoids side bars and keeps the status bar area consistent.
 
 ### Android icon removal (targeted inpainting)
 

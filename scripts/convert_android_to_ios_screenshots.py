@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PIL import Image
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_STATUS_OVERLAY = SKILL_ROOT / "assets" / "ios-status-bar-overlay.png"
@@ -51,8 +51,15 @@ def _is_island_flank_zone(x: int, width: int) -> bool:
     return island_min - margin <= x < island_min or island_max < x <= island_max + margin
 
 
+def _chrome_side_margins(width: int) -> tuple[int, int]:
+    """Left/right status-icon bands scaled from the 1242px reference overlay."""
+    scale = width / 1242
+    return round(300 * scale), round(340 * scale)
+
+
 def _is_status_chrome_zone(x: int, width: int) -> bool:
-    return x < 300 or x >= width - 340 or _is_island_flank_zone(x, width)
+    left, right = _chrome_side_margins(width)
+    return x < left or x >= width - right or _is_island_flank_zone(x, width)
 
 
 def _color_dist(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
@@ -78,8 +85,9 @@ def _estimate_status_bar_bg(px, width: int, bar_height: int) -> tuple[int, int, 
 def _estimate_status_row_bg(px, y: int, width: int) -> tuple[int, int, int]:
     """Compatibility helper — prefer corner-based bar bg when possible via caller."""
     island_min, island_max = _dynamic_island_bounds(width)
+    left, right = _chrome_side_margins(width)
     samples: list[tuple[int, int, int]] = []
-    for x in range(300, max(301, width - 340)):
+    for x in range(left, max(left + 1, width - right)):
         if island_min - 8 <= x <= island_max + 8:
             continue
         r, g, b, _ = px[x, y]
@@ -116,8 +124,10 @@ def _is_android_status_artifact(
         if bg_lum < 140:
             # Dark UI: Android icons/ghosts are lighter OR slightly darker than the flat bg.
             return abs(lum - bg_lum) > 12 or (sat >= 30 and _color_dist((r, g, b), row_bg) > 30)
-        # Light UI: Android icons are darker than the bg.
+        # Light UI: dark glyphs, OR brighter white ghosts (common when Android used light chrome).
         if lum < bg_lum - 22:
+            return True
+        if lum > bg_lum + 10 and sat < 45:
             return True
         if sat >= 38 and lum < 210 and _color_dist((r, g, b), row_bg) > 40:
             return True
@@ -206,7 +216,8 @@ def _inpaint_icon_pixels(
                 if not _is_android_status_artifact(r, g, b, x, w, row_bg=bar_bg):
                     continue
                 in_chrome = _is_status_chrome_zone(x, w)
-                radius = search_radius + (16 if in_chrome and x >= w - 340 else 0)
+                _, right = _chrome_side_margins(w)
+                radius = search_radius + (16 if in_chrome and x >= w - right else 0)
                 neighbors: list[tuple[int, int, int, int]] = []
                 for dx in range(-radius, radius + 1):
                     if dx == 0:
@@ -249,7 +260,8 @@ def remove_status_bar_ghosts(
                 if not _is_android_status_artifact(r, g, b, x, w, row_bg=bar_bg):
                     continue
                 in_chrome = _is_status_chrome_zone(x, w)
-                radius = 48 if in_chrome and x >= w - 340 else 36
+                _, right = _chrome_side_margins(w)
+                radius = 48 if in_chrome and x >= w - right else 36
                 neighbors: list[tuple[int, int, int, int]] = []
                 for dx in range(-radius, radius + 1):
                     if dx == 0:
@@ -307,7 +319,8 @@ def polish_status_chrome(
                     continue
                 if not _is_status_chrome_zone(x, w):
                     continue
-                on_right = x >= w - 340
+                _, right = _chrome_side_margins(w)
+                on_right = x >= w - right
                 on_island_flank = _is_island_flank_zone(x, w)
                 if on_right or on_island_flank:
                     lum_delta = 3.0
@@ -386,21 +399,25 @@ def scrub_status_chrome_to_bg(
     """Hard-replace residual Android ghosts in chrome zones with solid app status bg."""
     result = image.copy()
     px = result.load()
-    sop = status_overlay.load()
     w, h = result.size
     zone_end = min(bar_height, h, status_overlay.height)
     bar_bg = _estimate_status_bar_bg(px, w, zone_end)
+    bg_lum = _luminance(*bar_bg)
     # Tighter on flat dark/brand headers; looser on light textured decor.
-    tol = 10 if (_luminance(*bar_bg) < 160 or _saturation(*bar_bg) >= 45) else 28
+    tol = 10 if (bg_lum < 160 or _saturation(*bar_bg) >= 45) else 18
 
     for y in range(zone_end):
         for x in range(w):
-            if sop[x, y][3] > 0:
-                continue
             if not _is_status_chrome_zone(x, w):
                 continue
+            # Scrub under opaque overlay too so AA fringes don't reveal Android ghosts.
             r, g, b, a = px[x, y]
-            if _color_dist((r, g, b), bar_bg) > tol:
+            lum = _luminance(r, g, b)
+            sat = _saturation(r, g, b)
+            # Also wipe near-white ghosts that sit close to a cream header bg.
+            white_ghost = bg_lum >= 160 and lum > bg_lum + 6 and sat < 40
+            dark_ghost = bg_lum >= 160 and lum < bg_lum - 12
+            if _color_dist((r, g, b), bar_bg) > tol or white_ghost or dark_ghost:
                 px[x, y] = (*bar_bg, a)
 
     return result
@@ -663,6 +680,158 @@ def _adapt_home_indicator_overlay(
     return adapted
 
 
+def _status_region_samples(
+    framed: Image.Image,
+    bar_height: int,
+    *,
+    skip_chrome: bool = False,
+) -> list[float]:
+    """Luminance samples from the status band (island skipped; optional chrome skip)."""
+    px = framed.load()
+    w, h = framed.size
+    zone = min(bar_height, h)
+    samples: list[float] = []
+    island_l, island_r = _dynamic_island_bounds(w)
+    for y in range(zone):
+        for x in range(w // 5, 4 * w // 5):
+            if island_l - 8 <= x <= island_r + 8:
+                continue
+            if skip_chrome and _is_status_chrome_zone(x, w):
+                continue
+            samples.append(_luminance(*px[x, y][:3]))
+    return samples
+
+
+def _status_region_is_busy(framed: Image.Image, bar_height: int) -> bool:
+    """True when the status band looks like photo/map content, not flat app chrome."""
+    samples = _status_region_samples(framed, bar_height)
+    if len(samples) < 80:
+        return False
+    mean = sum(samples) / len(samples)
+    var = sum((s - mean) ** 2 for s in samples) / len(samples)
+    # High threshold so flat UI + Android status icons are not treated as photo/map.
+    return var > 900
+
+
+def _status_content_luminance(framed: Image.Image, bar_height: int) -> float:
+    samples = _status_region_samples(framed, bar_height, skip_chrome=True)
+    if len(samples) < 40:
+        samples = _status_region_samples(framed, bar_height)
+    if not samples:
+        px = framed.load()
+        return _luminance(*_estimate_status_bar_bg(px, framed.size[0], bar_height))
+    return sum(samples) / len(samples)
+
+
+def _adapt_status_bar_overlay(
+    overlay: Image.Image,
+    framed: Image.Image,
+    *,
+    prefer_light_chrome: bool | None = None,
+) -> Image.Image:
+    """Use dark glyphs on light backgrounds; keep white glyphs on dark/busy headers."""
+    w, h = framed.size
+    bar_h = min(STATUS_BAR_HEIGHT, overlay.height, h)
+    px = framed.load()
+    bar_bg = _estimate_status_bar_bg(px, w, bar_h)
+    bg_lum = _luminance(*bar_bg)
+    if prefer_light_chrome is None:
+        prefer_light_chrome = _status_region_is_busy(framed, bar_h) or bg_lum < 160
+
+    # Dark / mid / photographic headers: keep the white chrome overlay as-is.
+    if prefer_light_chrome:
+        return overlay
+
+    adapted = overlay.copy()
+    op = adapted.load()
+    ow, oh = adapted.size
+    for y in range(oh):
+        for x in range(ow):
+            r, g, b, a = op[x, y]
+            if a == 0:
+                continue
+            lum = _luminance(r, g, b)
+            if lum < 40:
+                # Dynamic Island stays black.
+                op[x, y] = (0, 0, 0, a)
+            else:
+                # White / light glyphs → dark for light app chrome.
+                inv = 255 - max(r, g, b)
+                inv = min(inv, 45)
+                op[x, y] = (inv, inv, inv, a)
+    return adapted
+
+
+def _clean_status_chrome_icons_keep_content(
+    image: Image.Image,
+    bar_height: int,
+    *,
+    prefer_light_chrome: bool,
+) -> Image.Image:
+    """Remove Android status icons only in left/right icon boxes.
+
+    Center photo/map under the Dynamic Island is left untouched. Each icon pixel
+    is replaced with the median color of the same row's center (icon-free) span so
+    the header stays continuous horizontally — no vertical smear.
+    """
+    result = image.copy()
+    px = result.load()
+    w, h = result.size
+    zone = min(bar_height, h)
+    boxes = ((0, round(w * 0.30)), (round(w * 0.70), w))
+    cx0, cx1 = round(w * 0.34), round(w * 0.66)
+    island_l, island_r = _dynamic_island_bounds(w)
+
+    def is_icon(r: int, g: int, b: int) -> bool:
+        lum = _luminance(r, g, b)
+        sat = _saturation(r, g, b)
+        if prefer_light_chrome:
+            # Dark photo: Android icons are white / light.
+            if lum >= 185 and sat < 65:
+                return True
+            if g > r + 20 and g > b + 12 and lum > 100:
+                return True
+            return False
+        # Light map: dark Android icons, plus any leftover bright ghosts.
+        if lum <= 75 and sat < 45:
+            return True
+        if lum >= 215 and sat < 45:
+            return True
+        return False
+
+    for y in range(zone):
+        for x0, x1 in boxes:
+            # Propagate real photo/map color inward from the content-facing edge.
+            if x0 == 0:
+                seed_x = min(x1 + 2, w - 1)
+                scan = range(x1 - 1, x0 - 1, -1)
+            else:
+                seed_x = max(x0 - 3, 0)
+                scan = range(x0, x1)
+            sr, sg, sb, sa = px[seed_x, y]
+            if is_icon(sr, sg, sb):
+                # Rare: seed sits on an icon — use center row median.
+                samples = [
+                    px[x, y][:3]
+                    for x in range(cx0, cx1)
+                    if not (island_l - 4 <= x <= island_r + 4)
+                    and not is_icon(*px[x, y][:3])
+                ]
+                if samples:
+                    samples.sort(key=lambda c: _luminance(*c))
+                    sr, sg, sb = samples[len(samples) // 2]
+                else:
+                    sr, sg, sb, sa = px[seed_x, min(zone + 4, h - 1)]
+            good = (sr, sg, sb, sa)
+            for x in scan:
+                r, g, b, a = px[x, y]
+                if is_icon(r, g, b):
+                    px[x, y] = good
+                else:
+                    good = (r, g, b, a)
+    return result
+
+
 def convert_screenshot(
     source_path: Path,
     dest_path: Path,
@@ -674,21 +843,42 @@ def convert_screenshot(
     home_indicator_overlay: Image.Image | None,
 ) -> None:
     image = Image.open(source_path).convert("RGBA")
+    source_busy = _status_region_is_busy(image, SOURCE_STATUS_HEIGHT)
 
-    if status_bar_overlay is not None:
+    if status_bar_overlay is not None and not source_busy:
+        # Flat chrome only — aggressive source inpaint flattens photo/map under the status bar.
         image = remove_android_status_icons_source(image)
+    elif source_busy:
+        # Photo/map: drop Android status so real content pixels sit under the iOS chrome.
+        # (Inpainting icons on busy headers leaves ghosts / smears.)
+        image = crop_bars(image, SOURCE_STATUS_HEIGHT, 0)
 
     image = remove_android_nav_line_source(image)
     cropped = crop_bars(image, status_bar_crop, nav_bar_crop)
     framed = resize_with_cover(cropped, target_width, target_height).convert("RGBA")
 
     if status_bar_overlay is not None:
-        framed = remove_android_status_icons(framed, bar_height=status_bar_overlay.height)
-        framed = remove_status_bar_ghosts(framed, status_bar_overlay.height, status_bar_overlay)
-        framed = polish_status_chrome(framed, status_bar_overlay.height, status_bar_overlay)
-        framed = polish_island_flanks(framed, status_bar_overlay.height, status_bar_overlay)
-        framed = scrub_status_chrome_to_bg(framed, status_bar_overlay.height, status_bar_overlay)
-        framed.paste(status_bar_overlay, (0, 0), status_bar_overlay)
+        # Trust source detection — after extend, framed status variance can look "flat".
+        busy_status = source_busy
+        if not busy_status:
+            framed = remove_android_status_icons(framed, bar_height=status_bar_overlay.height)
+            framed = remove_status_bar_ghosts(framed, status_bar_overlay.height, status_bar_overlay)
+            # Flat UI chrome: polish + hard scrub to solid header bg.
+            framed = polish_status_chrome(framed, status_bar_overlay.height, status_bar_overlay)
+            framed = polish_island_flanks(framed, status_bar_overlay.height, status_bar_overlay)
+            framed = scrub_status_chrome_to_bg(framed, status_bar_overlay.height, status_bar_overlay)
+            bar_bg = _estimate_status_bar_bg(framed.load(), framed.size[0], status_bar_overlay.height)
+            prefer_light = _luminance(*bar_bg) < 160
+            status = _adapt_status_bar_overlay(
+                status_bar_overlay, framed, prefer_light_chrome=prefer_light
+            )
+        else:
+            # Edge-to-edge photo/map: polarity from content under the extended header.
+            prefer_light = _status_content_luminance(framed, status_bar_overlay.height) < 160
+            status = _adapt_status_bar_overlay(
+                status_bar_overlay, framed, prefer_light_chrome=prefer_light
+            )
+        framed.paste(status, (0, 0), status)
 
     if home_indicator_overlay is not None:
         home = _adapt_home_indicator_overlay(home_indicator_overlay, framed)
@@ -710,8 +900,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--prefix", default="iphone_")
-    parser.add_argument("--width", type=int, default=1242)
-    parser.add_argument("--height", type=int, default=2688)
+    parser.add_argument(
+        "--width",
+        type=int,
+        default=1206,
+        help="Target width (default 1206: iPhone Dynamic Island medium / 1206×2622)",
+    )
+    parser.add_argument(
+        "--height",
+        type=int,
+        default=2622,
+        help="Target height (default 2622: App Store Connect Dynamic Island medium display)",
+    )
     parser.add_argument(
         "--status-bar-crop",
         type=int,

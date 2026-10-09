@@ -1,7 +1,7 @@
 ---
 name: android-to-ios-screenshots
-version: 1.1.0
-description: Converts Android app screenshots to iPhone App Store dimensions (1242x2688) with iOS status bar and home indicator overlays. Removes Android status/nav chrome via targeted inpainting, not band flattening. Use when preparing App Store screenshots from Android captures, converting screenshot dimensions for iOS, or when the user mentions android-to-ios-screenshots.
+version: 1.2.0
+description: Converts Android app screenshots to iPhone App Store dimensions (1206x2622, Dynamic Island medium display) with iOS status bar and home indicator overlays. Removes Android status/nav chrome via targeted inpainting, not band flattening. Use when preparing App Store screenshots from Android captures, converting screenshot dimensions for iOS, or when the user mentions android-to-ios-screenshots.
 ---
 
 # Android → iOS App Store screenshots
@@ -37,12 +37,13 @@ Ask the user for these paths if not provided.
 
 | Flag | Value | Why |
 |------|-------|-----|
-| `--width` / `--height` | 1242 × 2688 | App Store 6.5" display |
+| `--width` / `--height` | 1206 × 2622 | App Store Connect default: iPhone with Dynamic Island (medium display) |
 | `--status-bar-crop` | 0 | Keeps decor circles under status bar |
 | `--nav-bar-crop` | 48 | Removes Android gesture bar |
 | `--prefix` | `iphone_` | Output naming |
 
-For 6.7" display: `--width 1284 --height 2778`.
+Also accepted for the same slot: `--width 1179 --height 2556`.  
+Optional large Dynamic Island: `--width 1320 --height 2868`.
 
 ## Overlays
 
@@ -67,7 +68,7 @@ android-to-ios-screenshots \
 
 For each output PNG:
 
-- [ ] Exact dimensions (1242×2688 or requested size)
+- [ ] Exact dimensions (1206×2622 or requested size)
 - [ ] No Android icons visible under transparent status bar areas (left, right, beside Dynamic Island)
 - [ ] No flat sage rectangles in status/nav bands (never use full-band flatten)
 - [ ] Status chrome is white on dark or colored headers (not dark glyphs / peach bands)
