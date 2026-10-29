@@ -1,6 +1,6 @@
 ---
 name: android-to-ios-screenshots
-version: 1.2.0
+version: 1.3.0
 description: Converts Android app screenshots to iPhone App Store dimensions (1206x2622, Dynamic Island medium display) with iOS status bar and home indicator overlays. Removes Android status/nav chrome via targeted inpainting, not band flattening. Use when preparing App Store screenshots from Android captures, converting screenshot dimensions for iOS, or when the user mentions android-to-ios-screenshots.
 ---
 
@@ -41,9 +41,22 @@ Ask the user for these paths if not provided.
 | `--status-bar-crop` | 0 | Keeps decor circles under status bar |
 | `--nav-bar-crop` | 48 | Removes Android gesture bar |
 | `--prefix` | `iphone_` | Output naming |
+| `--content-below-status` | off | Full-bleed under Dynamic Island (default) |
 
 Also accepted for the same slot: `--width 1179 --height 2556`.  
 Optional large Dynamic Island: `--width 1320 --height 2868`.
+
+### When top bars sit under Dynamic Island
+
+For modals / screens with an Android top app bar (title + close) that would land under the island after conversion, add:
+
+```bash
+android-to-ios-screenshots \
+  --input "..." --output "..." --prefix iphone_ \
+  --content-below-status
+```
+
+Optional fine-tune: `--content-below-status-extra 36` (default). Do **not** enable this by default for normal full-bleed UI screenshots.
 
 ## Overlays
 
@@ -74,11 +87,13 @@ For each output PNG:
 - [ ] Status chrome is white on dark or colored headers (not dark glyphs / peach bands)
 - [ ] iOS home indicator visible at bottom — **light** on dark UIs, dark on light UIs
 - [ ] App UI content not cropped at sides
+- [ ] With `--content-below-status`: title / close clear the status bar and Dynamic Island
 
 ## Anti-patterns
 
 - **Do not** flatten entire top/bottom bands with median colors (creates sage rectangle artifacts)
 - **Do not** crop the top status area (`--status-bar-crop` must stay 0 unless user explicitly wants it)
+- **Do not** turn on `--content-below-status` for normal full-bleed screens (only modals / top app bars under DI)
 - **Do not** copy this script into app repos — it lives in this skill package only
 
 ## Package layout

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PIL import Image
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_STATUS_OVERLAY = SKILL_ROOT / "assets" / "ios-status-bar-overlay.png"
@@ -471,6 +471,55 @@ def resize_with_cover(image: Image.Image, target_width: int, target_height: int)
     return resized.crop((left, top, left + target_width, top + target_height))
 
 
+def _sample_edge_row_bg(image: Image.Image, y: int) -> tuple[int, int, int]:
+    """Average RGB along a horizontal row (for solid safe-area pad fills)."""
+    px = image.load()
+    width, height = image.size
+    y = max(0, min(height - 1, y))
+    samples: list[tuple[int, int, int]] = []
+    step = max(1, width // 64)
+    for x in range(0, width, step):
+        r, g, b, _ = px[x, y]
+        samples.append((r, g, b))
+    if not samples:
+        return REF_BG_COLOR
+    n = len(samples)
+    return (
+        sum(c[0] for c in samples) // n,
+        sum(c[1] for c in samples) // n,
+        sum(c[2] for c in samples) // n,
+    )
+
+
+def frame_content_below_status(
+    image: Image.Image,
+    target_width: int,
+    target_height: int,
+    content_top: int,
+    content_bottom: int,
+) -> Image.Image:
+    """Cover-resize into the safe content rect; fill status/home bands with edge colors."""
+    if content_bottom <= content_top:
+        raise ValueError(
+            f"Invalid safe-area frame: content_top={content_top} content_bottom={content_bottom}"
+        )
+    content_h = content_bottom - content_top
+    covered = resize_with_cover(image, target_width, content_h).convert("RGBA")
+    header_bg = _sample_edge_row_bg(covered, 0)
+    footer_bg = _sample_edge_row_bg(covered, covered.height - 1)
+
+    canvas = Image.new("RGBA", (target_width, target_height), (*header_bg, 255))
+    if content_bottom < target_height:
+        footer = Image.new(
+            "RGBA",
+            (target_width, target_height - content_bottom),
+            (*footer_bg, 255),
+        )
+        canvas.paste(footer, (0, content_bottom))
+    canvas.paste(covered, (0, content_top))
+    return canvas
+
+
 def _sample_corner_bg(strip: Image.Image) -> tuple[int, int, int]:
     """Average RGB from top-left corner pixels (away from Dynamic Island / icons)."""
     pixels = strip.load()
@@ -841,9 +890,12 @@ def convert_screenshot(
     nav_bar_crop: int,
     status_bar_overlay: Image.Image | None,
     home_indicator_overlay: Image.Image | None,
+    content_below_status: bool = False,
+    content_below_status_extra: int = 36,
 ) -> None:
     image = Image.open(source_path).convert("RGBA")
     source_busy = _status_region_is_busy(image, SOURCE_STATUS_HEIGHT)
+    removed_source_status = False
 
     if status_bar_overlay is not None and not source_busy:
         # Flat chrome only — aggressive source inpaint flattens photo/map under the status bar.
@@ -852,32 +904,57 @@ def convert_screenshot(
         # Photo/map: drop Android status so real content pixels sit under the iOS chrome.
         # (Inpainting icons on busy headers leaves ghosts / smears.)
         image = crop_bars(image, SOURCE_STATUS_HEIGHT, 0)
+        removed_source_status = True
 
     image = remove_android_nav_line_source(image)
     cropped = crop_bars(image, status_bar_crop, nav_bar_crop)
-    framed = resize_with_cover(cropped, target_width, target_height).convert("RGBA")
+
+    status_h = status_bar_overlay.height if status_bar_overlay is not None else STATUS_BAR_HEIGHT
+    home_h = (
+        home_indicator_overlay.height if home_indicator_overlay is not None else HOME_INDICATOR_HEIGHT
+    )
+
+    if content_below_status:
+        # Drop Android status so title/X sit at the top of the safe-area content rect.
+        if not removed_source_status and status_bar_crop < SOURCE_STATUS_HEIGHT:
+            cropped = crop_bars(cropped, SOURCE_STATUS_HEIGHT - status_bar_crop, 0)
+        content_top = status_h + max(0, content_below_status_extra)
+        content_bottom = target_height - home_h
+        framed = frame_content_below_status(
+            cropped, target_width, target_height, content_top, content_bottom
+        )
+    else:
+        framed = resize_with_cover(cropped, target_width, target_height).convert("RGBA")
 
     if status_bar_overlay is not None:
-        # Trust source detection — after extend, framed status variance can look "flat".
-        busy_status = source_busy
-        if not busy_status:
-            framed = remove_android_status_icons(framed, bar_height=status_bar_overlay.height)
-            framed = remove_status_bar_ghosts(framed, status_bar_overlay.height, status_bar_overlay)
-            # Flat UI chrome: polish + hard scrub to solid header bg.
-            framed = polish_status_chrome(framed, status_bar_overlay.height, status_bar_overlay)
-            framed = polish_island_flanks(framed, status_bar_overlay.height, status_bar_overlay)
-            framed = scrub_status_chrome_to_bg(framed, status_bar_overlay.height, status_bar_overlay)
+        if content_below_status:
+            # Top band is already a solid header fill — polarity only, no Android scrub.
             bar_bg = _estimate_status_bar_bg(framed.load(), framed.size[0], status_bar_overlay.height)
             prefer_light = _luminance(*bar_bg) < 160
             status = _adapt_status_bar_overlay(
                 status_bar_overlay, framed, prefer_light_chrome=prefer_light
             )
         else:
-            # Edge-to-edge photo/map: polarity from content under the extended header.
-            prefer_light = _status_content_luminance(framed, status_bar_overlay.height) < 160
-            status = _adapt_status_bar_overlay(
-                status_bar_overlay, framed, prefer_light_chrome=prefer_light
-            )
+            # Trust source detection — after extend, framed status variance can look "flat".
+            busy_status = source_busy
+            if not busy_status:
+                framed = remove_android_status_icons(framed, bar_height=status_bar_overlay.height)
+                framed = remove_status_bar_ghosts(framed, status_bar_overlay.height, status_bar_overlay)
+                # Flat UI chrome: polish + hard scrub to solid header bg.
+                framed = polish_status_chrome(framed, status_bar_overlay.height, status_bar_overlay)
+                framed = polish_island_flanks(framed, status_bar_overlay.height, status_bar_overlay)
+                framed = scrub_status_chrome_to_bg(framed, status_bar_overlay.height, status_bar_overlay)
+                bar_bg = _estimate_status_bar_bg(framed.load(), framed.size[0], status_bar_overlay.height)
+                prefer_light = _luminance(*bar_bg) < 160
+                status = _adapt_status_bar_overlay(
+                    status_bar_overlay, framed, prefer_light_chrome=prefer_light
+                )
+            else:
+                # Edge-to-edge photo/map: polarity from content under the extended header.
+                prefer_light = _status_content_luminance(framed, status_bar_overlay.height) < 160
+                status = _adapt_status_bar_overlay(
+                    status_bar_overlay, framed, prefer_light_chrome=prefer_light
+                )
         framed.paste(status, (0, 0), status)
 
     if home_indicator_overlay is not None:
@@ -923,6 +1000,20 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=48,
         help="Pixels to remove from bottom Android gesture bar (default 48)",
+    )
+    parser.add_argument(
+        "--content-below-status",
+        action="store_true",
+        help=(
+            "Frame app UI below the iOS status bar (modals / top app bars). "
+            "Off by default; full-bleed cover under Dynamic Island remains the default."
+        ),
+    )
+    parser.add_argument(
+        "--content-below-status-extra",
+        type=int,
+        default=36,
+        help="Extra pixels under the status overlay before content starts (default 36)",
     )
     parser.add_argument(
         "--status-bar-ref",
@@ -980,6 +1071,8 @@ def main() -> None:
             nav_bar_crop=args.nav_bar_crop,
             status_bar_overlay=status_overlay,
             home_indicator_overlay=home_overlay,
+            content_below_status=args.content_below_status,
+            content_below_status_extra=args.content_below_status_extra,
         )
 
 

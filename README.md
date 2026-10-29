@@ -1,12 +1,18 @@
 # android-to-ios-screenshots
 
-**Version:** 1.2.0
+**Version:** 1.3.0
 
 Convert Android app screenshots into PNGs ready for **App Store Connect** (iPhone with Dynamic Island medium display, **1206×2622**) directly into your AI agents of choice.
 
 Built for **KMP/Compose** apps (same UI on Android and iOS): capture screenshots on an Android device or emulator and reuse them for the iOS App Store listing, with an iOS status bar and home indicator, and no visible Android system visuals.
 
 ## Changelog
+
+### 1.3.0
+
+- Opt-in **`--content-below-status`**: frame app UI below the iOS status bar (modals / top app bars under Dynamic Island)
+- Optional **`--content-below-status-extra`** (default 36) for margin under the status overlay
+- Default full-bleed cover under the island unchanged when the flag is off
 
 ### 1.2.0
 
@@ -112,6 +118,16 @@ android-to-ios-screenshots \
   --prefix iphone_
 ```
 
+#### Example: modal / top app bar under Dynamic Island
+
+```bash
+android-to-ios-screenshots \
+  --input "./android-paywall" \
+  --output "./ios-paywall" \
+  --prefix iphone_ \
+  --content-below-status
+```
+
 
 
 ## Main options
@@ -126,6 +142,8 @@ android-to-ios-screenshots \
 | `--height`                         | `2622`       | Target height (Dynamic Island medium display)                                  |
 | `--status-bar-crop`                | `0`          | Pixels to crop from top (**keep 0** to preserve header decor) |
 | `--nav-bar-crop`                   | `48`         | Pixels to crop from bottom (Android gesture bar)              |
+| `--content-below-status`           | off          | Frame UI below iOS status bar (modals / top app bars)         |
+| `--content-below-status-extra`     | `36`         | Extra px under status overlay before content                  |
 | `--no-ios-status-bar`              | off          | Resize only, no status bar overlay                            |
 | `--no-ios-home-indicator`          | off          | Skip iOS home indicator overlay                               |
 | `--status-bar-ref`                 | —            | iOS simulator screenshot used to regenerate overlays          |
